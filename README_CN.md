@@ -352,7 +352,9 @@ openclaw config get plugins.slots.memory
     "filterNoise": true,
     "lengthNormAnchor": 500,
     "hardMinScore": 0.35,
-    "timeDecayHalfLifeDays": 60
+    "timeDecayHalfLifeDays": 60,
+    "reinforcementFactor": 0.5,
+    "maxHalfLifeMultiplier": 3
   },
   "enableManagementTools": false,
   "scopes": {
@@ -373,6 +375,17 @@ openclaw config get plugins.slots.memory
 ```
 
 </details>
+
+### 访问强化（1.0.26）
+
+为了让“经常被用到的记忆”衰减得更慢，检索器可以根据 **手动 recall 的频率**（类似间隔重复/记忆强化）来延长有效的 time-decay half-life。
+
+配置项（位于 `retrieval` 下）：
+- `reinforcementFactor`（范围 0–2，默认 `0.5`）— 设为 `0` 可关闭
+- `maxHalfLifeMultiplier`（范围 1–10，默认 `3`）— 硬上限：有效 half-life ≤ 基础值 × multiplier
+
+说明：
+- 强化逻辑只对白名单 `source: "manual"` 生效（用户/工具主动 recall），避免 auto-recall 意外“强化”噪声。
 
 ### Embedding 提供商
 

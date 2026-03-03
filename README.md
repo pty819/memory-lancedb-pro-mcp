@@ -353,7 +353,9 @@ openclaw config get plugins.slots.memory
     "filterNoise": true,
     "lengthNormAnchor": 500,
     "hardMinScore": 0.35,
-    "timeDecayHalfLifeDays": 60
+    "timeDecayHalfLifeDays": 60,
+    "reinforcementFactor": 0.5,
+    "maxHalfLifeMultiplier": 3
   },
   "enableManagementTools": false,
   "scopes": {
@@ -374,6 +376,17 @@ openclaw config get plugins.slots.memory
 ```
 
 </details>
+
+### Access Reinforcement (1.0.26)
+
+To make frequently used memories decay more slowly, the retriever can extend the effective time-decay half-life based on **manual recall frequency** (spaced-repetition style).
+
+Config keys (under `retrieval`):
+- `reinforcementFactor` (range: 0–2, default: `0.5`) — set `0` to disable
+- `maxHalfLifeMultiplier` (range: 1–10, default: `3`) — hard cap: effective half-life ≤ base × multiplier
+
+Notes:
+- Reinforcement is **whitelisted to `source: "manual"`** (i.e. user/tool initiated recall), to avoid accidental strengthening from auto-recall.
 
 ### Embedding Providers
 
