@@ -91,10 +91,9 @@ export function sanitizeReflectionSliceLines(lines: string[]): string[] {
 }
 
 const INJECTABLE_REFLECTION_BLOCK_PATTERNS: RegExp[] = [
-  /\b(ignore|disregard|forget|override|bypass)\b[\s\S]{0,80}\b(previous|prior|above|earlier|system|developer|instructions?|guardrails?|policy)\b/i,
-  /\b(system prompt|developer prompt|hidden prompt|hidden instructions?|chain[- ]of[- ]thought|reasoning trace)\b/i,
-  /\b(reveal|print|dump|show)\b[\s\S]{0,80}\b(prompt|instructions?|secrets?|keys?|tokens?)\b/i,
-  /<(?:system|assistant|user|tool|developer|inherited-rules|derived-focus)>/i,
+  /^\s*(?:(?:next|this)\s+run\s+)?(?:ignore|disregard|forget|override|bypass)\b[\s\S]{0,80}\b(?:instructions?|guardrails?|policy|developer|system|previous|prior|above|earlier)\b/i,
+  /\b(?:reveal|print|dump|show|output)\b[\s\S]{0,80}\b(?:system prompt|developer prompt|hidden prompt|hidden instructions?|full prompt|prompt verbatim|secrets?|keys?|tokens?)\b/i,
+  /<\s*\/?\s*(?:system|assistant|user|tool|developer|inherited-rules|derived-focus)\b[^>]*>/i,
   /^(?:system|assistant|user|developer|tool)\s*:/i,
 ];
 
@@ -229,24 +228,27 @@ export function extractReflectionMappedMemoryItems(reflectionText: string): Refl
   });
 }
 
-export function extractReflectionSlices(reflectionText: string): ReflectionSlices {
+function extractReflectionSlicesWithSanitizer(
+  reflectionText: string,
+  sanitizeLines: (lines: string[]) => string[],
+): ReflectionSlices {
   const invariantSection = parseSectionBullets(reflectionText, "Invariants");
   const derivedSection = parseSectionBullets(reflectionText, "Derived");
   const mergedSection = parseSectionBullets(reflectionText, "Invariants & Reflections");
 
-  const invariantsPrimary = sanitizeReflectionSliceLines(invariantSection).filter(isInvariantRuleLike);
-  const derivedPrimary = sanitizeReflectionSliceLines(derivedSection).filter(isDerivedDeltaLike);
+  const invariantsPrimary = sanitizeLines(invariantSection).filter(isInvariantRuleLike);
+  const derivedPrimary = sanitizeLines(derivedSection).filter(isDerivedDeltaLike);
 
-  const invariantLinesLegacy = sanitizeReflectionSliceLines(
+  const invariantLinesLegacy = sanitizeLines(
     mergedSection.filter((line) => /invariant|stable|policy|rule/i.test(line))
   ).filter(isInvariantRuleLike);
-  const reflectionLinesLegacy = sanitizeReflectionSliceLines(
+  const reflectionLinesLegacy = sanitizeLines(
     mergedSection.filter((line) => /reflect|inherit|derive|change|apply/i.test(line))
   ).filter(isDerivedDeltaLike);
-  const openLoopLines = sanitizeReflectionSliceLines(parseSectionBullets(reflectionText, "Open loops / next actions"))
+  const openLoopLines = sanitizeLines(parseSectionBullets(reflectionText, "Open loops / next actions"))
     .filter(isOpenLoopAction)
     .filter(isDerivedDeltaLike);
-  const durableDecisionLines = sanitizeReflectionSliceLines(parseSectionBullets(reflectionText, "Decisions (durable)"))
+  const durableDecisionLines = sanitizeLines(parseSectionBullets(reflectionText, "Decisions (durable)"))
     .filter(isInvariantRuleLike);
 
   const invariants = invariantsPrimary.length > 0
@@ -260,6 +262,14 @@ export function extractReflectionSlices(reflectionText: string): ReflectionSlice
     invariants: invariants.slice(0, 8),
     derived: derived.slice(0, 10),
   };
+}
+
+export function extractReflectionSlices(reflectionText: string): ReflectionSlices {
+  return extractReflectionSlicesWithSanitizer(reflectionText, sanitizeReflectionSliceLines);
+}
+
+export function extractInjectableReflectionSlices(reflectionText: string): ReflectionSlices {
+  return extractReflectionSlicesWithSanitizer(reflectionText, sanitizeInjectableReflectionLines);
 }
 
 export function extractReflectionSliceItems(reflectionText: string): ReflectionSliceItem[] {

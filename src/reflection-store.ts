@@ -1,7 +1,7 @@
 import type { MemoryEntry, MemorySearchResult } from "./store.js";
 import {
   extractReflectionSliceItems,
-  extractReflectionSlices,
+  extractInjectableReflectionSlices,
   sanitizeReflectionSliceLines,
   sanitizeInjectableReflectionLines,
   type ReflectionSlices,
@@ -58,7 +58,7 @@ export function buildReflectionStorePayloads(params: BuildReflectionStorePayload
   slices: ReflectionSlices;
   payloads: ReflectionStorePayload[];
 } {
-  const slices = extractReflectionSlices(params.reflectionText);
+  const slices = extractInjectableReflectionSlices(params.reflectionText);
   const eventId = params.eventId || createReflectionEventId({
     runAt: params.runAt,
     sessionKey: params.sessionKey,
