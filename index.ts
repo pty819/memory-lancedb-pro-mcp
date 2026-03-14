@@ -32,7 +32,7 @@ import {
 } from "./src/reflection-store.js";
 import {
   extractReflectionLearningGovernanceCandidates,
-  extractReflectionMappedMemoryItems,
+  extractInjectableReflectionMappedMemoryItems,
 } from "./src/reflection-slices.js";
 import { createReflectionEventId } from "./src/reflection-event-store.js";
 import { buildReflectionMappedMetadata } from "./src/reflection-mapped-metadata.js";
@@ -2768,7 +2768,7 @@ const memoryLanceDBProPlugin = {
             command: String(event.action || "unknown"),
           });
 
-          const mappedReflectionMemories = extractReflectionMappedMemoryItems(reflectionText);
+          const mappedReflectionMemories = extractInjectableReflectionMappedMemoryItems(reflectionText);
           for (const mapped of mappedReflectionMemories) {
             const vector = await embedder.embedPassage(mapped.text);
             let existing: Awaited<ReturnType<typeof store.vectorSearch>> = [];
