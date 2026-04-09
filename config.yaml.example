@@ -1,0 +1,63 @@
+# =============================================================================
+# memory-lancedb-pro — MCP Server Configuration Template
+# =============================================================================
+# 复制此文件为 config.yaml 并填写实际值：
+#   cp config.yaml.example config.yaml
+
+# ── Database ─────────────────────────────────────────────────────────────────
+memory:
+  dbPath: ~/.memory-lancedb-pro/lancedb
+
+# ── Embedding ────────────────────────────────────────────────────────────────
+# 支持任意 OpenAI-compatible API
+# 推荐：本地 llama-server（无需 API key）或 Jina / OpenAI / Voyage 等
+embedding:
+  provider: openai-compatible
+  apiKey: your-embedding-api-key          # 本地 llama-server 可用 dummy 值
+  model: v5-small-retrieval               # embedding 模型名
+  baseURL: http://127.0.0.1:8080/v1       # API base URL
+  dimensions: 1024                         # 向量维度（需与模型输出一致）
+  normalized: false                        # cosine similarity 由 fusion 处理
+  chunking: true
+  # 检索专用模型需要 query/passage 前缀（本地 llama-server 不支持 task 字段）
+  textPrefixQuery: "Query: "
+  textPrefixPassage: "Document: "
+
+# ── LLM（SmartExtractor — 独立于 embedding API）───────────────────────────────
+# 用于：L0/L1/L2 抽象、六分类、去重判断
+llm:
+  apiKey: your-llm-api-key
+  model: your-model
+  baseURL: https://api.example.com/v1
+  timeoutMs: 30000
+
+# ── Retrieval ────────────────────────────────────────────────────────────────
+retrieval:
+  mode: hybrid                              # hybrid | vector
+  vectorWeight: 0.7
+  bm25Weight: 0.3
+  minScore: 0.3
+  rerank: none                               # cross-encoder | lightweight | none
+
+# ── Score Decay ──────────────────────────────────────────────────────────────
+decay:
+  recencyHalfLifeDays: 14
+  frequencyWeight: 0.3
+  importanceModulation: 0.2
+
+# ── Scopes ───────────────────────────────────────────────────────────────────
+scopes:
+  default: global
+
+# ── Auto-Capture ─────────────────────────────────────────────────────────────
+autoCapture:
+  enabled: true
+  captureAssistant: false
+  minSignificance: 0.4
+
+# ── Auto-Recall ───────────────────────────────────────────────────────────────
+autoRecall:
+  enabled: true
+  minQueryLength: 15
+  defaultScope: global
+  maxItems: 5
