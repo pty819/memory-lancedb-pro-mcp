@@ -403,11 +403,31 @@ async function handleMemoryIngest(
 
     // Delegate to SmartExtractor — LLM-driven extraction, deduplication, and classification
     // The user text is wrapped as a conversation turn to match extraction prompt format
+    // Retry up to 3 times on LLM failure (rate limiting, malformed response, etc.)
     const conversationText = `用户：${text}`;
     const sessionKey = `mcp-ingest-${Date.now()}`;
-    const stats = await deps.smartExtractor.extractAndPersist(conversationText, sessionKey, {
-      scope: targetScope,
-    });
+    let stats: Awaited<ReturnType<SmartExtractor["extractAndPersist"]>> | null = null;
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        stats = await deps.smartExtractor.extractAndPersist(conversationText, sessionKey, {
+          scope: targetScope,
+        });
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt < 3) {
+          // Wait 2s before retry on failure
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+    }
+    if (!stats) {
+      return {
+        content: [{ type: "text", text: `Memory storage failed after 3 attempts: ${lastError?.message ?? "unknown error"}` }],
+        isError: true,
+      };
+    }
 
     return {
       content: [
