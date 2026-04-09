@@ -1,8 +1,10 @@
 # `memory-lancedb-pro` 记忆架构分析
 
-> 更新时间：2026-03-09  
-> 基准：当前仓库中的 `README.md`、`openclaw.plugin.json`、`index.ts`、`src/*`、`cli.ts`  
-> 结论：当前版本已经形成完整的“写入 -> 存储 -> 检索 -> 生命周期维护 -> 运维工具”闭环；智能提取、嵌入噪声检测、生命周期衰减、Tier 晋升/降级、迁移升级、CLI 与 Agent Tools 都已纳入同一主架构。
+> 更新时间：2026-04-09  
+> 基准：MCP 改造完成后的 `src/mcp-server.ts`、`src/mcp-tools.ts`、`src/mcp-config.ts`、`src/store.ts`、`src/retriever.ts`、`src/smart-extractor.ts`、`src/embedder.ts` 等  
+> 状态：**已更新为 MCP 架构**，OpenClaw 体系已废弃
+
+> ⚠️ **历史版本说明**：此文档原版基于 OpenClaw plugin 架构（`index.ts`、OpenClaw hooks、`tools.ts`）。2026-04-09 完成 MCP 改造后，入口层已更替，但核心业务逻辑（store/retriever/embedder/smart-extractor/decay/tier）保持不变。本文档仅更新入口层描述，核心架构章节内容仍然准确。
 
 ---
 
@@ -38,33 +40,46 @@
 
 ---
 
-## 二、总体架构图
+## 二、总体架构图（MCP 改造后）
 
 ```mermaid
 graph TD
-    subgraph Runtime["OpenClaw Runtime Surface"]
+    subgraph Runtime["Hermes Gateway + MCP Client"]
         U["用户消息 / Agent 对话"]
-        T["Agent Tools<br/>memory_recall / store / forget / update"]
-        C["CLI<br/>openclaw memory-pro ..."]
-        N["/new Hook<br/>sessionMemory"]
-        X["可选批处理脚本<br/>jsonl_distill.py -> import"]
+        S["SOUL.md<br/>工具调用指导（内嵌 prompt）"]
+        M["MCP Client<br/>config.yaml mcp_servers"]
     end
 
-    subgraph Plugin["index.ts"]
-        P1["配置解析"]
-        P2["Hook 注册"]
-        P3["Tool 注册"]
-        P4["CLI 注册"]
-        P5["Service 注册<br/>启动检查 / 升级提示 / 自动备份"]
-    end
-
-    subgraph WritePath["写入链路"]
-        W1["agent_end"]
-        W0["NoisePrototypeBank<br/>嵌入噪声预过滤"]
-        W2["SmartExtractor<br/>LLM 6 类提取"]
-        W3["Regex Fallback"]
-        W4["buildSmartMetadata()"]
-        W5["store.store / store.update / importEntry"]
+    subgraph MCPServer["node dist/mcp-server.js"]
+        MS["mcp-server.ts<br/>总装配器"]
+        Cfg["mcp-config.ts<br/>config.yaml 读取"]
+        subgraph WritePath["写入链路"]
+            W0["NoisePrototypeBank<br/>嵌入噪声预过滤"]
+            W2["SmartExtractor<br/>LLM 6 类提取 + 两阶段去重"]
+            W3["Regex Fallback"]
+            W4["buildSmartMetadata()"]
+            W5["store.store / store.update"]
+        end
+        subgraph ReadPath["检索链路"]
+            R1["memory_recall / CLI search"]
+            R2["Embed Query"]
+            R3["Vector Search"]
+            R4["BM25 / FTS Search"]
+            R5["Fusion"]
+            R6["Cross-Encoder / Cosine Rerank"]
+            R7["Length Norm"]
+            R8["Decay Boost"]
+            R9["Hard Min Score"]
+            R10["Noise Filter"]
+            R11["MMR Diversity"]
+        end
+        subgraph Lifecycle["生命周期维护"]
+            L1["runRecallLifecycle()"]
+            L2["patchMetadata()<br/>access_count / last_accessed_at"]
+            L3["decayEngine.scoreAll()"]
+            L4["tierManager.evaluateAll()"]
+            L5["patchMetadata()<br/>tier / tier_updated_at"]
+        end
     end
 
     subgraph DataPlane["数据平面"]
@@ -73,51 +88,20 @@ graph TD
         D3["metadata JSON<br/>memory_category tier l0/l1/l2 access_count confidence ..."]
     end
 
-    subgraph ReadPath["检索链路"]
-        R1["before_agent_start / memory_recall / CLI search"]
-        R2["Embed Query"]
-        R3["Vector Search"]
-        R4["BM25 / FTS Search"]
-        R5["Fusion"]
-        R6["Cross-Encoder / Cosine Rerank"]
-        R7["Length Norm"]
-        R8["Decay Boost / Legacy Time Decay"]
-        R9["Hard Min Score"]
-        R10["Noise Filter"]
-        R11["MMR Diversity"]
-    end
+    U --> S
+    S --> M
+    M --> MS
+    MS --> Cfg
 
-    subgraph Lifecycle["生命周期维护"]
-        L1["runRecallLifecycle()<br/>仅 auto-recall 主链"]
-        L2["patchMetadata()<br/>access_count / last_accessed_at"]
-        L3["decayEngine.scoreAll()"]
-        L4["tierManager.evaluateAll()"]
-        L5["patchMetadata()<br/>tier / tier_updated_at"]
-    end
-
-    U --> P2
-    T --> P3
-    C --> P4
-    N --> P2
-    X --> C
-
-    P2 --> W1
-    W1 --> W0
+    Cfg --> W0
     W0 --> W2
-    W1 --> W3
+    Cfg --> W3
     W2 --> W4
     W3 --> W4
-    T --> W4
-    N --> W4
-    C --> W5
     W4 --> W5
     W5 --> D1
-    D1 --> D2
-    D1 --> D3
 
-    P2 --> R1
-    P3 --> R1
-    P4 --> R1
+    MS --> R1
     R1 --> R2
     R2 --> R3
     R1 --> R4
@@ -137,42 +121,47 @@ graph TD
     L4 --> L5
 ```
 
+> **入口变更说明**：原 OpenClaw 的 `before_agent_start` / `agent_end` / `command:new` Hook 体系已废弃。改造后，agent 通过 SOUL.md 内嵌指导自主决定调用 `memory_recall` / `memory_ingest` 等 MCP 工具，不再依赖外部 hook 文件。
+
 ---
 
-## 三、入口层：`index.ts` 是总装配器
+## 三、入口层：`mcp-server.ts` 是总装配器
 
-`index.ts` 不是简单导出插件对象，而是整个系统的总装配器，负责把各模块接入 OpenClaw：
+> ⚠️ **2026-04-09 更新**：`index.ts`（OpenClaw plugin 入口）已废弃，替换为 `mcp-server.ts`。
 
-- 解析配置并做 env var 展开
+`src/mcp-server.ts` 是整个 MCP Server 的总装配器，负责把各模块接入 Hermes Gateway：
+
+- 读取 `config.yaml`（`mcp-config.ts`）
 - 创建 `MemoryStore`、`Embedder`、`MemoryRetriever`、`ScopeManager`
-- 可选初始化 `SmartExtractor`
-- 注册 Agent Tools
-- 注册 `memory-pro` CLI
-- 注册 `before_agent_start`、`agent_end`、`command:new`
-- 注册后台 service：启动检查、legacy upgrade 提示、自动备份
+- 创建 `DecayEngine`、`TierManager`
+- 创建 `LLMClient`（独立于 embedding API）
+- 初始化 `SmartExtractor`
+- 注册全部 14 个 MCP tools（`mcp-tools.ts`）
+- 连接 `StdioServerTransport`，开始 stdio 监听
 
-### 3.1 运行时默认值
+### 3.1 工具注册（14个 MCP tools）
 
-按当前实现，关键默认行为如下：
+| 工具 | 来源 |
+|------|------|
+| `memory_recall` / `memory_ingest` / `memory_forget` / `memory_update` | 核心 4 个 |
+| `memory_stats` / `memory_list` / `memory_debug` / `memory_promote` / `memory_archive` / `memory_compact` / `memory_explain_rank` | 管理 7 个 |
+| `self_improvement_log` / `self_improvement_extract_skill` / `self_improvement_review` | 自改进 3 个 |
 
-- `smartExtraction`: 默认开启
-- `extractMinMessages`: 默认 `2`
-- `autoCapture`: 默认开启
-- `autoRecall`: 默认关闭
-- `captureAssistant`: 默认关闭
-- `enableManagementTools`: 默认关闭
-- `sessionMemory`: 只有显式 `sessionMemory.enabled === true` 才注册 Hook，运行时默认关闭
+### 3.2 运行时默认值
 
-### 3.2 服务层职责
+| 配置项 | 默认值 |
+|--------|--------|
+| `scopes.default` | `global` |
+| `autoCapture.enabled` | `true` |
+| `autoCapture.minSignificance` | `0.4` |
+| `autoRecall.enabled` | `true` |
+| `autoRecall.maxItems` | `5` |
+| `retrieval.mode` | `hybrid` |
+| `llm.timeoutMs` | `30000` |
 
-插件 `registerService().start()` 不是业务核心链路，但它负责运维闭环：
+### 3.3 SOUL.md 集成（非 hook 文件）
 
-- 异步执行 `embedder.test()` 与 `retriever.test()`，避免阻塞 Gateway 启动
-- 启动后约 5 秒检查 legacy memory 数量并输出 upgrade 提示
-- 启动后 1 分钟做一次 JSONL 备份，此后每 24 小时做一次
-- 停止时清理定时器
-
-这意味着该插件不仅有“读写能力”，也有“自检 + 自提示 + 备份”的运维能力。
+Agent 的调用时机由 `SOUL.md` 中的 "Memory Tools — Mandatory Usage Rules" 区块指导，替代了原 OpenClaw 的 hook 体系。Agent 自主判断何时调用记忆工具，而非由 hook 强制触发。
 
 ---
 
@@ -671,24 +660,31 @@ graph LR
 
 ## 十二、工具面与 CLI 面：这不是附属功能，而是第二操作平面
 
-### 12.1 Agent Tools
+### 12.1 MCP Tools（当前 14 个）
 
-核心工具现在是 4 个：
+> ⚠️ **2026-04-09 更新**：工具体系从 OpenClaw Agent Tools 改为 MCP Tools，全部 14 个默认注册。
 
+**核心 4 个：**
 - `memory_recall`
-- `memory_store`
+- `memory_ingest`
 - `memory_forget`
 - `memory_update`
 
-可选管理工具：
-
+**管理 7 个：**
 - `memory_stats`
 - `memory_list`
+- `memory_debug`
+- `memory_promote`
+- `memory_archive`
+- `memory_compact`
+- `memory_explain_rank`
 
-注意：
+**自改进 3 个：**
+- `self_improvement_log`
+- `self_improvement_extract_skill`
+- `self_improvement_review`
 
-- 核心 4 个默认注册
-- 管理工具只有 `enableManagementTools === true` 才注册
+> 注意：全部 14 个默认注册，不再有 `enableManagementTools` 开关。
 
 ### 12.2 CLI
 
@@ -803,25 +799,29 @@ README 新增的批处理方案是另一条非常值得记录的架构支线：
 
 ## 十六、核心文件职责索引
 
-| 文件 | 当前职责 |
-| --- | --- |
-| `index.ts` | 插件总装配器：配置解析、Hook、Tool、CLI、Service、生命周期闭环 |
-| `src/store.ts` | LanceDB 存储层：初始化、FTS、vector/BM25、CRUD、metadata patch |
-| `src/embedder.ts` | Embedding 抽象层：provider 适配、task embedding、chunking、cache |
-| `src/chunker.ts` | 长文本分块器 |
-| `src/retriever.ts` | 混合检索、rerank、length norm、decay boost、MMR |
-| `src/smart-extractor.ts` | LLM 提取、嵌入噪声预过滤、两阶段去重、merge/create/skip、持久化 |
-| `src/smart-metadata.ts` | metadata 归一化、兼容映射、lifecycle 视图转换 |
-| `src/decay-engine.ts` | Weibull 衰减模型、搜索分数 boost |
-| `src/tier-manager.ts` | 三层记忆晋升/降级 |
-| `src/scopes.ts` | 多 scope 隔离与 agent 访问控制 |
-| `src/tools.ts` | Agent Tools 平面 |
-| `cli.ts` | 运维 CLI 平面 |
-| `src/migrate.ts` | 从旧插件迁移 |
-| `src/memory-upgrader.ts` | 同库旧格式升级 |
-| `src/noise-filter.ts` | 写入/检索噪声过滤（regex 规则） |
-| `src/noise-prototypes.ts` | 嵌入噪声原型库：语言无关噪声检测 + LLM 反馈学习 |
-| `src/adaptive-retrieval.ts` | auto-recall 检索守卫 |
+| 文件 | 当前职责 | 备注 |
+| --- | --- | --- |
+| `src/mcp-server.ts` | MCP Server 总装配器：配置读取、各模块初始化、stdio transport | ✅ 新增（MCP 入口） |
+| `src/mcp-tools.ts` | 14 个 MCP tool 注册（Zod schema + handler 实现） | ✅ 新增（1949行） |
+| `src/mcp-config.ts` | config.yaml 读取，类型化配置对象 | ✅ 新增 |
+| `src/store.ts` | LanceDB 存储层：初始化、FTS、vector/BM25、CRUD、metadata patch | 不变 |
+| `src/embedder.ts` | Embedding 抽象层：provider 适配、task embedding、chunking、cache | 不变（修复了 console.debug） |
+| `src/chunker.ts` | 长文本分块器（semantic split + CJK 适配） | 不变 |
+| `src/retriever.ts` | 混合检索、rerank、length norm、decay boost、MMR | 不变 |
+| `src/smart-extractor.ts` | LLM 提取、嵌入噪声预过滤、两阶段去重、merge/create/skip、持久化 | 不变 |
+| `src/smart-metadata.ts` | metadata 归一化、兼容映射、lifecycle 视图转换 | 不变 |
+| `src/llm-client.ts` | LLM 调用封装（completeJson、OAuth、SSE 解析） | 不变 |
+| `src/decay-engine.ts` | Weibull 衰减模型、搜索分数 boost | 不变 |
+| `src/tier-manager.ts` | 三层记忆晋升/降级 | 不变 |
+| `src/scopes.ts` | 多 scope 隔离与 agent 访问控制 | 不变 |
+| `src/tools.ts` | OpenClaw Agent Tools（已废弃，未使用） | ⚠️ 保留但未使用 |
+| `src/migrate.ts` | 从旧插件迁移 | 不变 |
+| `src/memory-upgrader.ts` | 同库旧格式升级 | 不变 |
+| `src/noise-filter.ts` | 写入/检索噪声过滤（regex 规则） | 不变 |
+| `src/noise-prototypes.ts` | 嵌入噪声原型库：语言无关噪声检测 + LLM 反馈学习 | 不变 |
+| `src/adaptive-retrieval.ts` | auto-recall 检索守卫 | 不变 |
+| `config.yaml` | MCP Server 运行时配置（llm / embedding / retrieval / decay / scopes） | ✅ 新增 |
+| `~/.hermes/config.yaml` | Hermes Gateway MCP server 注册 | ✅ 新增 |
 
 ---
 

@@ -3,7 +3,7 @@
   "version": "1.1.0-beta.10",
   "description": "OpenClaw enhanced LanceDB memory plugin with hybrid retrieval (Vector + BM25), cross-encoder rerank, multi-scope isolation, long-context chunking, and management CLI",
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/mcp-server.js",
   "keywords": [
     "openclaw",
     "openclaw-plugin",
@@ -26,18 +26,18 @@
   "license": "MIT",
   "dependencies": {
     "@lancedb/lancedb": "^0.26.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@sinclair/typebox": "0.34.48",
     "apache-arrow": "18.1.0",
+    "js-yaml": "^4.1.1",
     "json5": "^2.2.3",
     "openai": "^6.21.0",
-    "proper-lockfile": "^4.1.2"
-  },
-  "openclaw": {
-    "extensions": [
-      "./index.ts"
-    ]
+    "proper-lockfile": "^4.1.2",
+    "zod": "^4.3.6"
   },
   "scripts": {
+    "build": "tsc",
+    "start": "node dist/mcp-server.js",
     "test": "node scripts/verify-ci-test-manifest.mjs && npm run test:cli-smoke && npm run test:core-regression && npm run test:storage-and-schema && npm run test:llm-clients-and-auth && npm run test:packaging-and-workflow",
     "test:cli-smoke": "node scripts/run-ci-tests.mjs --group cli-smoke",
     "test:core-regression": "node scripts/run-ci-tests.mjs --group core-regression",
@@ -51,13 +51,14 @@
     "version": "node scripts/sync-plugin-version.mjs openclaw.plugin.json package.json && git add openclaw.plugin.json"
   },
   "optionalDependencies": {
-    "@lancedb/lancedb-darwin-x64": "^0.26.2",
     "@lancedb/lancedb-darwin-arm64": "^0.26.2",
-    "@lancedb/lancedb-linux-x64-gnu": "^0.26.2",
+    "@lancedb/lancedb-darwin-x64": "^0.26.2",
     "@lancedb/lancedb-linux-arm64-gnu": "^0.26.2",
+    "@lancedb/lancedb-linux-x64-gnu": "^0.26.2",
     "@lancedb/lancedb-win32-x64-msvc": "^0.26.2"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "commander": "^14.0.0",
     "jiti": "^2.6.0",
     "typescript": "^5.9.3"

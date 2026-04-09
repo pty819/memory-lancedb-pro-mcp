@@ -82,53 +82,24 @@ The chunker automatically adapts to your embedding model:
 
 ### Disabling Auto-Chunking
 
-If you prefer to handle chunking manually or want the model to fail on long documents:
+Auto-chunking is controlled by the `embedding.chunking` flag in `config.yaml`:
 
-```json
-{
-  "plugins": {
-    "entries": {
-      "memory-lancedb-pro": {
-        "enabled": true,
-        "config": {
-          "embedding": {
-            "apiKey": "${JINA_API_KEY}",
-            "model": "jina-embeddings-v5-text-small",
-            "chunking": false  // Disable auto-chunking
-          }
-        }
-      }
-    }
-  }
-}
+```yaml
+# ~/.hermes/plugins/memory-lancedb-pro/config.yaml
+embedding:
+  provider: openai-compatible
+  apiKey: your-api-key
+  model: v5-small-retrieval
+  baseURL: http://127.0.0.1:8080/v1
+  dimensions: 1024
+  chunking: false  # Disable auto-chunking
 ```
 
 ### Custom Chunking Parameters
 
-For advanced users who want to tune chunking behavior:
+Currently the chunker uses `smartChunk()` which auto-derives parameters from the embedding model's context limit (70% of limit as maxChunkSize, 5% as overlapSize, 10% as minChunkSize). For fine-tuning, adjust the `dimensions` field to effectively reduce the token budget, or set `chunking: false` to disable entirely and rely on the embedder's error-handling fallback.
 
-```json
-{
-  "plugins": {
-    "entries": {
-      "memory-lancedb-pro": {
-        "enabled": true,
-        "config": {
-          "embedding": {
-            "autoChunk": {
-              "maxChunkSize": 2000,      // Characters per chunk
-              "overlapSize": 500,          // Overlap between chunks
-              "minChunkSize": 500,         // Minimum acceptable chunk size
-              "semanticSplit": true,       // Prefer sentence boundaries
-              "maxLinesPerChunk": 100      // Max lines before forced split
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
+> **Note**: The advanced `autoChunk` JSON config shown in older documentation was specific to the OpenClaw plugin JSON format and is not applicable in the current MCP config.yaml setup.
 
 ## Supported Models
 

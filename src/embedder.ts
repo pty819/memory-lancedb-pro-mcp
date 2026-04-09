@@ -96,6 +96,12 @@ export interface EmbeddingConfig {
   taskQuery?: string;
   /** Optional task type for passage/document embeddings (e.g. "retrieval.passage") */
   taskPassage?: string;
+  /** Text prefix for query embeddings (e.g. "Query: "). Required for retrieval models
+   *  that distinguish query vs document in the same semantic space. */
+  textPrefixQuery?: string;
+  /** Text prefix for passage/document embeddings (e.g. "Document: "). Required for retrieval
+   *  models that distinguish query vs document in the same semantic space. */
+  textPrefixPassage?: string;
   /** Optional flag to request normalized embeddings (provider-dependent, e.g. Jina v5) */
   normalized?: boolean;
   /** When true, omit the dimensions parameter from embedding requests even if dimensions is set.
@@ -436,6 +442,8 @@ export class Embedder {
   private readonly _baseURL?: string;
   private readonly _taskQuery?: string;
   private readonly _taskPassage?: string;
+  private readonly _textPrefixQuery?: string;
+  private readonly _textPrefixPassage?: string;
   private readonly _normalized?: boolean;
   private readonly _capabilities: EmbeddingCapabilities;
 
@@ -455,6 +463,8 @@ export class Embedder {
     this._baseURL = config.baseURL;
     this._taskQuery = config.taskQuery;
     this._taskPassage = config.taskPassage;
+    this._textPrefixQuery = config.textPrefixQuery;
+    this._textPrefixPassage = config.textPrefixPassage;
     this._normalized = config.normalized;
     this._requestDimensions = config.dimensions;
     this._omitDimensions = config.omitDimensions === true;
@@ -465,12 +475,13 @@ export class Embedder {
 
     // Warn if configured fields will be silently ignored by this provider profile
     if (config.normalized !== undefined && !this._capabilities.normalized) {
-      console.debug(
+      // Use console.error so output goes to stderr, not stdout (MCP stdio must keep stdout clean)
+      console.error(
         `[memory-lancedb-pro] embedding.normalized is set but provider profile "${profile}" does not support it — value will be ignored`
       );
     }
     if ((config.taskQuery || config.taskPassage) && !this._capabilities.taskField) {
-      console.debug(
+      console.error(
         `[memory-lancedb-pro] embedding.taskQuery/taskPassage is set but provider profile "${profile}" does not support task hints — values will be ignored`
       );
     }
@@ -722,6 +733,21 @@ export class Embedder {
   // Internals
   // --------------------------------------------------------------------------
 
+  /** Apply text prefix for retrieval model support.
+   *  When the configured task matches the query task, prepend query prefix.
+   *  When it matches the passage task, prepend passage prefix.
+   *  Otherwise return text unchanged. */
+  private _applyTextPrefix(text: string, task?: string): string {
+    if (!task) return text;
+    if (this._textPrefixQuery && task === this._taskQuery) {
+      return this._textPrefixQuery + text;
+    }
+    if (this._textPrefixPassage && task === this._taskPassage) {
+      return this._textPrefixPassage + text;
+    }
+    return text;
+  }
+
   private validateEmbedding(embedding: number[]): void {
     if (!Array.isArray(embedding)) {
       throw new Error(`Embedding is not an array (got ${typeof embedding})`);
@@ -774,22 +800,28 @@ export class Embedder {
       throw new Error("Cannot embed empty text");
     }
 
+    // Apply text prefix for retrieval models (e.g. "Query: " for queries, "Document: " for passages).
+    // The prefix is determined by matching the task hint against our configured query/passage tasks.
+    const prefixedText = this._applyTextPrefix(text, task);
+
     // FR-01: Recursion depth limit — force truncate when too deep
     if (depth >= MAX_EMBED_DEPTH) {
-      const safeLimit = Math.floor(text.length * STRICT_REDUCTION_FACTOR);
+      const safeLimit = Math.floor(prefixedText.length * STRICT_REDUCTION_FACTOR);
       console.warn(
         `[memory-lancedb-pro] Recursion depth ${depth} reached MAX_EMBED_DEPTH (${MAX_EMBED_DEPTH}), ` +
-        `force-truncating ${text.length} chars → ${safeLimit} chars (strict ${STRICT_REDUCTION_FACTOR * 100}% reduction)`
+        `force-truncating ${prefixedText.length} chars → ${safeLimit} chars (strict ${STRICT_REDUCTION_FACTOR * 100}% reduction)`
       );
       if (safeLimit < 100) {
         throw new Error(
           `[memory-lancedb-pro] Failed to embed: input too large for model context after ${MAX_EMBED_DEPTH} retries`
         );
       }
-      text = text.slice(0, safeLimit);
+      text = prefixedText.slice(0, safeLimit);
+    } else {
+      text = prefixedText;
     }
 
-    // Check cache first
+    // Check cache first (keyed on the already-prefixed text + task)
     const cached = this._cache.get(text, task);
     if (cached) return cached;
 
@@ -893,13 +925,13 @@ export class Embedder {
       return [];
     }
 
-    // Filter out empty texts and track indices
+    // Filter out empty texts and track indices; apply text prefix for retrieval models
     const validTexts: string[] = [];
     const validIndices: number[] = [];
 
     texts.forEach((text, index) => {
       if (text && text.trim().length > 0) {
-        validTexts.push(text);
+        validTexts.push(this._applyTextPrefix(text, task));
         validIndices.push(index);
       }
     });

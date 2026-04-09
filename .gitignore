@@ -11,3 +11,7 @@ skills/maintain-memory-lancedb-pro/
 skills/validate-memory-lancedb-pro-pr/
 test/addressing-identity-regression.mjs
 validate-memory-lancedb-pro-pr/
+
+# 本地运行时配置（包含 API keys，各环境独立）
+config.yaml
+recall_cache/

@@ -1,5 +1,13 @@
 # OpenClaw 集成与迭代手册
 
+> ⚠️ **DEPRECATED — 2026-04-09**  
+> 本文档已废弃。`memory-lancedb-pro` 已从 OpenClaw Plugin 改造为 MCP Server，不再依赖 OpenClaw 体系。请参考：
+> - `MIGRATION-PLAN.md` — MCP 改造完整记录
+> - `INGEST-REFORM-PLAN.md` — SmartExtractor 集成记录
+> - `memory_architecture_analysis.md` — 架构分析（已更新为 MCP 架构）
+
+---
+
 这份文档把 `memory-lancedb-pro` 在真实 OpenClaw 环境中的集成、联调和回归测试经验整理成一套可复用说明，面向两类读者：
 
 - 初次接入 OpenClaw 的新用户
